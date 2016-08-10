@@ -22,7 +22,7 @@ func Init() (api *Api) {
 
 func TestTicker(t *testing.T) {
 	api := Init()
-	ticker, err := api.GetTicker()
+	ticker, err := api.GetTicker("btcusd")
 	if err != nil {
 		t.Errorf("Could not fetch ticker :", err)
 	}
@@ -33,18 +33,18 @@ func TestTicker(t *testing.T) {
 
 func TestOrderBook(t *testing.T) {
 	api := Init()
-	orderbook, err := api.GetOrderBook()
+	orderbook, err := api.GetOrderBook("btcusd")
 	if err != nil {
 		t.Errorf("Could not fetch orderbook :", err)
 	}
-	if orderbook.Orders[0].Price == 0. {
+	if orderbook.Asks[0].Price == 0. {
 		t.Errorf("Orderbook probably wrongly filled")
 	}
 }
 
 func TestTrades(t *testing.T) {
 	api := Init()
-	trades, err := api.GetTrades()
+	trades, err := api.GetTrades("btcusd")
 	if err != nil {
 		t.Errorf("Could not fetch trades :", err)
 	}
@@ -55,7 +55,7 @@ func TestTrades(t *testing.T) {
 
 func TestTradesParams(t *testing.T) {
 	api := Init()
-	trades, err := api.GetTradesParams(1, 10, "desc")
+	trades, err := api.GetTradesParams("btcusd", "")
 	if err != nil {
 		t.Errorf("Could not fetch trades with params:", err)
 	}

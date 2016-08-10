@@ -8,12 +8,19 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/avdva/go-pusher"
+	"github.com/pkg/errors"
 )
 
 const (
-	API_URL = "https://www.bitstamp.net/api/"
+	// API_URL is a url of the api v2 endpoint
+	API_URL = "https://www.bitstamp.net/api/v2"
+	// APP_KEY is a pusher app key.
+	APP_KEY = "de504dc5763aeef9ff52"
 )
 
+// Ticker is a tick representation.
 type Ticker struct {
 	Last float64 `json:",string"`
 	High float64 `json:",string"`
@@ -22,30 +29,34 @@ type Ticker struct {
 	Bid  float64 `json:",string"`
 }
 
+// OrderBook is a standart order book.
 type OrderBook struct {
-	Time   time.Time
-	Orders []Order
+	Time time.Time
+	Asks []Order
+	Bids []Order
 }
 
+// Order is a (price, amount) pair
 type Order struct {
-	Type   string // "ask" or "bid"
 	Price  float64
 	Amount float64
 }
 
+// Trade is a trade representation.
 type Trade struct {
 	Time   time.Time
-	Id     string
+	ID     string
 	Price  float64
 	Amount float64
 }
 
+// Api is a Bitstamp client.
 type Api struct {
 	User     string
 	Password string
 }
 
-// Creates a new api object given a config file. The config file must
+// NewFromConfig creates a new api object given a config file. The config file must
 // be json formated to inlude User and Password
 func NewFromConfig(cfgfile string) (api *Api, err error) {
 	file, err := ioutil.ReadFile(cfgfile)
@@ -59,16 +70,15 @@ func NewFromConfig(cfgfile string) (api *Api, err error) {
 		return nil, err
 	}
 	return api, nil
-
 }
 
-func New(user, password string) (api *Api, err error) {
-
-	api = &Api{
+// New creates a new api object given a user and a password.
+func New(user, password string) *Api {
+	api := &Api{
 		User:     user,
 		Password: password,
 	}
-	return api, nil
+	return api
 }
 
 func (api *Api) get(url string) (body []byte, err error) {
@@ -81,8 +91,9 @@ func (api *Api) get(url string) (body []byte, err error) {
 	return
 }
 
-func (api *Api) GetTicker() (ticker *Ticker, err error) {
-	body, err := api.get("ticker/")
+// GetTicker returns a ticker for the goven symbol.
+func (api *Api) GetTicker(symbol string) (ticker *Ticker, err error) {
+	body, err := api.get("/ticker/" + symbol)
 	if err != nil {
 		return
 	}
@@ -92,86 +103,122 @@ func (api *Api) GetTicker() (ticker *Ticker, err error) {
 		return
 	}
 	return
-
 }
 
-func (api *Api) GetOrderBook() (orderbook *OrderBook, err error) {
-	body, err := api.get("order_book/")
+// GetOrderBook returns order book for the given symbol.
+func (api *Api) GetOrderBook(symbol string) (orderbook *OrderBook, err error) {
+	body, err := api.get("/order_book/" + symbol)
 	if err != nil {
 		return
 	}
-	orderbook = new(OrderBook)
+	return api.parseOrderBook(body)
+}
+
+func (api *Api) parseOrderBook(data []byte) (*OrderBook, error) {
 	defaultstruct := make(map[string]interface{})
-	err = json.Unmarshal(body, &defaultstruct)
+	err := json.Unmarshal(data, &defaultstruct)
 	if err != nil {
-		return
+		return nil, err
 	}
-	timestamp_str := defaultstruct["timestamp"].(string)
-	timestamp, err := strconv.ParseInt(timestamp_str, 10, 64)
-	if err != nil {
-		return
+
+	timestamp := time.Now().Unix()
+
+	if timestampObj, found := defaultstruct["timestamp"]; found {
+		timestampStr, ok := timestampObj.(string)
+		if !ok {
+			return nil, errors.New("invalid timestamp")
+		}
+		timestamp, err = strconv.ParseInt(timestampStr, 10, 64)
+		if err != nil {
+			return nil, err
+		}
 	}
-	orderbook.Time = time.Unix(timestamp, 0)
+
+	result := &OrderBook{Time: time.Unix(timestamp, 0)}
 
 	bids := defaultstruct["bids"].([]interface{})
 	asks := defaultstruct["asks"].([]interface{})
-	total := len(bids) + len(asks)
-	orderbook.Orders = make([]Order, total)
-	for i, bid := range bids {
-		_bid := bid.([]interface{})
-		price, err := strconv.ParseFloat(_bid[0].(string), 64)
-		if err != nil {
-			return orderbook, err
+
+	parse := func(arr []interface{}) ([]Order, error) {
+		var result []Order
+		for _, elem := range arr {
+			ord := elem.([]interface{})
+			price, err := strconv.ParseFloat(ord[0].(string), 64)
+			if err != nil {
+				return nil, err
+			}
+			amount, err := strconv.ParseFloat(ord[1].(string), 64)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, Order{Price: price, Amount: amount})
 		}
-		amount, err := strconv.ParseFloat(_bid[1].(string), 64)
-		if err != nil {
-			return orderbook, err
-		}
-		order := Order{
-			Type:   "bid",
-			Price:  price,
-			Amount: amount,
-		}
-		orderbook.Orders[i] = order
-	}
-	for i, ask := range asks {
-		_ask := ask.([]interface{})
-		price, err := strconv.ParseFloat(_ask[0].(string), 64)
-		if err != nil {
-			return orderbook, err
-		}
-		amount, err := strconv.ParseFloat(_ask[1].(string), 64)
-		if err != nil {
-			return orderbook, err
-		}
-		order := Order{
-			Type:   "ask",
-			Price:  price,
-			Amount: amount,
-		}
-		orderbook.Orders[i+len(bids)] = order
+		return result, nil
 	}
 
-	return
+	if parsedBids, err := parse(bids); err == nil {
+		result.Bids = parsedBids
+	} else {
+		return nil, errors.Wrap(err, "bids parsing error")
+	}
+
+	if parsedAsks, err := parse(asks); err == nil {
+		result.Asks = parsedAsks
+	} else {
+		return nil, errors.Wrap(err, "asks parsing error")
+	}
+
+	return result, nil
 }
 
-// Get the list of last trades with default parameters
-func (api *Api) GetTrades() (trades []Trade, err error) {
-	body, err := api.get("transactions/")
+// GetTrades returns the list of last trades with default parameters.
+func (api *Api) GetTrades(symbol string) (trades []Trade, err error) {
+	body, err := api.get("/transactions/" + symbol)
 	return formatTrades(body)
 }
 
-// Specify wich trades you want.
-func (api *Api) GetTradesParams(offset, limit int64, sort string) (trades []Trade, err error) {
+// GetTradesParams returns the list of last trades.
+//	interval - The time interval from which we want the transactions to be returned.
+//		Possible values are minute, hour (default) or day.
+func (api *Api) GetTradesParams(symbol string, interval string) (trades []Trade, err error) {
 	values := url.Values{}
-	values.Add("offset", strconv.FormatInt(offset, 10))
-	values.Add("limit", strconv.FormatInt(limit, 10))
-	values.Add("sort", sort)
-	body, err := api.get("transactions/?" + values.Encode())
+	values.Add("time", interval)
+	body, err := api.get("/transactions/" + symbol + "/?" + values.Encode())
 	if err != nil {
 		return
 	}
 	return formatTrades(body)
+}
+
+// SubscribeOrderBook subscribes for websocket events and sends order book updates
+// into dataChan. To stop processing, sent to, or close stopChan.
+func (api *Api) SubscribeOrderBook(dataChan chan<- OrderBook, stopChan <-chan struct{}) error {
+	pusherClient, err := pusher.NewClient(APP_KEY)
+	err = pusherClient.Subscribe("order_book")
+	if err != nil {
+		return errors.Wrap(err, "subscription error")
+	}
+	dataChannelTrade, err := pusherClient.Bind("data")
+	if err != nil {
+		return errors.Wrap(err, "bind error")
+	}
+	for {
+		select {
+		case dataEvt, ok := <-dataChannelTrade:
+			if !ok {
+				return errors.New("websocket has been closed")
+			}
+			fmt.Println(dataEvt.Data)
+			if ob, err := api.parseOrderBook([]byte(dataEvt.Data)); err == nil {
+				dataChan <- *ob
+			}
+		case <-stopChan:
+			pusherClient.Unbind("data")
+			pusherClient.Unsubscribe("order_book")
+			pusherClient.Close()
+			return nil
+		}
+	}
 }
 
 func formatTrades(body []byte) (trades []Trade, err error) {
@@ -191,15 +238,15 @@ func formatTrades(body []byte) (trades []Trade, err error) {
 		if err != nil {
 			return trades, err
 		}
-		timestamp_str := _t["date"].(string)
-		timestamp, err := strconv.ParseInt(timestamp_str, 10, 64)
+		timestampStr := _t["date"].(string)
+		timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 		if err != nil {
 			return trades, err
 		}
 		time := time.Unix(timestamp, 0)
 		trade := Trade{
 			Time:   time,
-			Id:     strconv.FormatInt(int64(_t["tid"].(float64)), 10),
+			ID:     _t["tid"].(string),
 			Price:  price,
 			Amount: amount,
 		}
