@@ -208,7 +208,6 @@ func (api *Api) SubscribeOrderBook(dataChan chan<- OrderBook, stopChan <-chan st
 			if !ok {
 				return errors.New("websocket has been closed")
 			}
-			fmt.Println(dataEvt.Data)
 			if ob, err := api.parseOrderBook([]byte(dataEvt.Data)); err == nil {
 				dataChan <- *ob
 			}
