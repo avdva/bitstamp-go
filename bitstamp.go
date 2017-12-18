@@ -192,9 +192,9 @@ func (api *Api) GetTradesParams(symbol string, interval string) (trades []Trade,
 
 // SubscribeOrderBook subscribes for websocket events and sends order book updates
 // into dataChan. To stop processing, sent to, or close stopChan.
-func (api *Api) SubscribeOrderBook(dataChan chan<- OrderBook, stopChan <-chan struct{}) error {
+func (api *Api) SubscribeOrderBook(symb string, dataChan chan<- OrderBook, stopChan <-chan struct{}) error {
 	pusherClient, err := pusher.NewClient(APP_KEY)
-	err = pusherClient.Subscribe("order_book")
+	err = pusherClient.Subscribe("order_book_" + symb)
 	if err != nil {
 		return errors.Wrap(err, "subscription error")
 	}
