@@ -194,6 +194,9 @@ func (api *Api) GetTradesParams(symbol string, interval string) (trades []Trade,
 // into dataChan. To stop processing, sent to, or close stopChan.
 func (api *Api) SubscribeOrderBook(symb string, dataChan chan<- OrderBook, stopChan <-chan struct{}) error {
 	pusherClient, err := pusher.NewClient(APP_KEY)
+	if err != nil {
+		return errors.Wrap(err, "client creation error")
+	}
 	channel := "order_book"
 	if symb != "btcusd" {
 		channel += "_" + symb
