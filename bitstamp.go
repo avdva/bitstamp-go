@@ -136,8 +136,14 @@ func (api *Api) parseOrderBook(data []byte) (*OrderBook, error) {
 
 	result := &OrderBook{Time: time.Unix(timestamp, 0)}
 
-	bids := defaultstruct["bids"].([]interface{})
-	asks := defaultstruct["asks"].([]interface{})
+	bids, ok := defaultstruct["bids"].([]interface{})
+	if !ok {
+		return nil, errors.Wrap(err, "bids interface convert error")
+	}
+	asks, ok := defaultstruct["asks"].([]interface{})
+	if !ok {
+		return nil, errors.Wrap(err, "asks interface convert error")
+	}
 
 	parse := func(arr []interface{}) ([]Order, error) {
 		var result []Order
@@ -174,6 +180,9 @@ func (api *Api) parseOrderBook(data []byte) (*OrderBook, error) {
 // GetTrades returns the list of last trades with default parameters.
 func (api *Api) GetTrades(symbol string) (trades []Trade, err error) {
 	body, err := api.get("/transactions/" + symbol)
+	if err != nil {
+		return nil, errors.Wrap(err, "get transactions error")
+	}
 	return formatTrades(body)
 }
 

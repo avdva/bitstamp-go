@@ -24,7 +24,7 @@ func TestTicker(t *testing.T) {
 	api := Init()
 	ticker, err := api.GetTicker("btcusd")
 	if err != nil {
-		t.Errorf("Could not fetch ticker :", err)
+		t.Errorf("Could not fetch ticker : %s", err)
 	}
 	if ticker.Last == 0 {
 		t.Errorf("Ticker probably wrongly filled")
@@ -35,7 +35,7 @@ func TestOrderBook(t *testing.T) {
 	api := Init()
 	orderbook, err := api.GetOrderBook("btcusd")
 	if err != nil {
-		t.Errorf("Could not fetch orderbook :", err)
+		t.Errorf("Could not fetch orderbook : %s", err)
 	}
 	if orderbook.Asks[0].Price == 0. {
 		t.Errorf("Orderbook probably wrongly filled")
@@ -46,7 +46,7 @@ func TestTrades(t *testing.T) {
 	api := Init()
 	trades, err := api.GetTrades("btcusd")
 	if err != nil {
-		t.Errorf("Could not fetch trades :", err)
+		t.Errorf("Could not fetch trades : %s", err)
 	}
 	if len(trades) == 0 || trades[0].Price == 0. {
 		t.Errorf("trades probably wrongly filled")
@@ -57,7 +57,7 @@ func TestTradesParams(t *testing.T) {
 	api := Init()
 	trades, err := api.GetTradesParams("btcusd", "")
 	if err != nil {
-		t.Errorf("Could not fetch trades with params:", err)
+		t.Errorf("Could not fetch trades with params: %s", err)
 	}
 	if len(trades) == 0 || trades[0].Price == 0. {
 		t.Errorf("trades with params probably wrongly filled")
