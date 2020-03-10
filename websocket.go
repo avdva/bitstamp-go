@@ -28,7 +28,7 @@ func NewWsClient() (*WsClient, error) {
 	c := WsClient{
 		done:   make(chan bool, 1),
 		Stream: make(chan *WsEvent),
-		Errors: make(chan error),
+		Errors: make(chan error, 1),
 	}
 
 	// set up websocket
@@ -49,13 +49,21 @@ func NewWsClient() (*WsClient, error) {
 				var err error
 				_, message, err = c.ws.ReadMessage()
 				if err != nil {
-					c.Errors <- err
+					select {
+					case c.Errors <- err:
+					default:
+						fmt.Printf("can't write to Errors chan read message err: %s", err)
+					}
 					continue
 				}
 				e := &WsEvent{}
 				err = json.Unmarshal(message, e)
 				if err != nil {
-					c.Errors <- err
+					select {
+					case c.Errors <- err:
+					default:
+						fmt.Printf("can't write to Errors chan unmarshal err: %s", err)
+					}
 					continue
 				}
 				c.Stream <- e
