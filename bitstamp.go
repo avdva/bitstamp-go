@@ -9,15 +9,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/avdva/go-pusher"
 	"github.com/pkg/errors"
 )
 
 const (
 	// API_URL is a url of the api v2 endpoint
 	API_URL = "https://www.bitstamp.net/api/v2"
-	// APP_KEY is a pusher app key.
-	APP_KEY = "de504dc5763aeef9ff52"
 )
 
 // Ticker is a tick representation.
@@ -202,35 +199,33 @@ func (api *Api) GetTradesParams(symbol string, interval string) (trades []Trade,
 // SubscribeOrderBook subscribes for websocket events and sends order book updates
 // into dataChan. To stop processing, sent to, or close stopChan.
 func (api *Api) SubscribeOrderBook(symb string, dataChan chan<- OrderBook, stopChan <-chan struct{}) error {
-	pusherClient, err := pusher.NewClient(APP_KEY)
+	c, err := NewWsClient()
 	if err != nil {
-		return errors.Wrap(err, "client creation error")
+		return errors.Wrap(err, "error initializing client")
 	}
-	channel := "order_book"
-	if symb != "btcusd" {
-		channel += "_" + symb
-	}
-	err = pusherClient.Subscribe(channel)
+
+	err = c.Subscribe(fmt.Sprintf("order_book_%s", symb))
 	if err != nil {
-		return errors.Wrap(err, "subscription error")
+		return err
 	}
-	dataChannelTrade, err := pusherClient.Bind("data")
-	if err != nil {
-		return errors.Wrap(err, "bind error")
-	}
+
 	for {
 		select {
-		case dataEvt, ok := <-dataChannelTrade:
-			if !ok {
-				return errors.New("websocket has been closed")
-			}
-			if ob, err := api.parseOrderBook([]byte(dataEvt.Data)); err == nil {
-				dataChan <- *ob
+		case ev := <-c.Stream:
+			if ev.Event == "data" {
+				if ob, err := api.parseOrderBook(ev.Data); err == nil {
+					dataChan <- *ob
+				}
+			} else {
+				fmt.Println(ev.Event)
 			}
 		case <-stopChan:
-			pusherClient.Unbind("data")
-			pusherClient.Unsubscribe("order_book")
-			pusherClient.Close()
+		case <-c.Errors:
+			err = c.Unsubscribe(fmt.Sprintf("order_book_%s", symb))
+			if err != nil {
+				fmt.Printf("usubscribe err : %s", err)
+			}
+			c.Close()
 			return nil
 		}
 	}
