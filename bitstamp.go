@@ -204,17 +204,16 @@ func (api *Api) SubscribeOrderBook(symb string, dataChan chan<- OrderBook, stopC
 		return errors.Wrap(err, "error initializing client")
 	}
 
-	c.Subscribe(fmt.Sprintf("order_book_%s", symb))
+	err = c.Subscribe(fmt.Sprintf("order_book_%s", symb))
+	if err != nil {
+		return err
+	}
 
 	for {
 		select {
 		case ev := <-c.Stream:
 			if ev.Event == "data" {
-				b, err := json.Marshal(ev.Data)
-				if err != nil {
-					return errors.Wrap(err, "error marshal data to byte")
-				}
-				if ob, err := api.parseOrderBook(b); err == nil {
+				if ob, err := api.parseOrderBook(ev.Data); err == nil {
 					dataChan <- *ob
 				}
 			} else {
@@ -222,7 +221,10 @@ func (api *Api) SubscribeOrderBook(symb string, dataChan chan<- OrderBook, stopC
 			}
 		case <-stopChan:
 		case <-c.Errors:
-			c.Unsubscribe(fmt.Sprintf("order_book_%s", symb))
+			err = c.Unsubscribe(fmt.Sprintf("order_book_%s", symb))
+			if err != nil {
+				fmt.Printf("usubscribe err : %s", err)
+			}
 			c.Close()
 			return nil
 		}

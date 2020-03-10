@@ -11,9 +11,9 @@ import (
 const bitstampWsUrl = "wss://ws.bitstamp.net"
 
 type WsEvent struct {
-	Event   string      `json:"event"`
-	Channel string      `json:"channel"`
-	Data    interface{} `json:"data"`
+	Event   string          `json:"event"`
+	Channel string          `json:"channel"`
+	Data    json.RawMessage `json:"data"`
 }
 
 type WsClient struct {
@@ -34,7 +34,7 @@ func NewWsClient() (*WsClient, error) {
 	// set up websocket
 	ws, _, err := websocket.DefaultDialer.Dial(bitstampWsUrl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error dialing websocket: %s", err)
+		return nil, fmt.Errorf("error dialing websocket: %w", err)
 	}
 	c.ws = ws
 
@@ -70,36 +70,37 @@ func (c *WsClient) Close() {
 	c.done <- true
 }
 
-func (c *WsClient) Subscribe(channels ...string) {
+func (c *WsClient) Subscribe(channels ...string) error {
 	for _, channel := range channels {
 		sub := WsEvent{
 			Event: "bts:subscribe",
-			Data: map[string]interface{}{
-				"channel": channel,
-			},
+			Data:  json.RawMessage(fmt.Sprintf(`{"channel":"%s"}`, channel)),
 		}
-		c.sendEvent(sub)
+		if err := c.sendEvent(sub); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func (c *WsClient) Unsubscribe(channels ...string) {
+func (c *WsClient) Unsubscribe(channels ...string) error {
 	for _, channel := range channels {
 		sub := WsEvent{
 			Event: "bts:unsubscribe",
-			Data: map[string]interface{}{
-				"channel": channel,
-			},
+			Data:  json.RawMessage(fmt.Sprintf(`{"channel":"%s"}`, channel)),
 		}
-		c.sendEvent(sub)
+		if err := c.sendEvent(sub); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func (c *WsClient) sendEvent(sub WsEvent) {
+func (c *WsClient) sendEvent(sub WsEvent) error {
 	c.sendLock.Lock()
 	defer c.sendLock.Unlock()
 
-	err := c.ws.WriteJSON(&sub)
-	if err != nil {
-		fmt.Println(err)
-	}
+	return c.ws.WriteJSON(&sub)
 }
