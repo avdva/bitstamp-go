@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-const bitstampWsUrl = "wss://ws.bitstamp.net"
+const (
+	bitstampWsUrl = "wss://ws.bitstamp.net"
+	readMsgTimeout = 100 * time.Millisecond
+)
 
 type WsEvent struct {
 	Event   string          `json:"event"`
@@ -22,6 +26,10 @@ type WsClient struct {
 	sendLock sync.Mutex
 	Stream   chan *WsEvent
 	Errors   chan error
+}
+
+type errTemporary interface {
+	Temporary() bool
 }
 
 func NewWsClient() (*WsClient, error) {
@@ -54,6 +62,12 @@ func NewWsClient() (*WsClient, error) {
 					default:
 						fmt.Printf("can't write to Errors chan read message err: %s", err)
 					}
+					if et, success := err.(errTemporary); success {
+						if !et.Temporary() {
+							return
+						}
+					}
+					time.Sleep(readMsgTimeout)
 					continue
 				}
 				e := &WsEvent{}
@@ -75,7 +89,11 @@ func NewWsClient() (*WsClient, error) {
 }
 
 func (c *WsClient) Close() {
-	c.done <- true
+	select {
+	case c.done <- true:
+	default:
+		fmt.Printf("failed to send done event to chan")
+	}
 }
 
 func (c *WsClient) Subscribe(channels ...string) error {
